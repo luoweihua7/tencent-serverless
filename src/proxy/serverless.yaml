@@ -1,0 +1,36 @@
+app: proxy
+component: scf
+inputs:
+  description: 链接地址转发
+  eip: true
+  enableRoleAuth: true
+  events:
+    - apigw:
+        name: Serverless
+        parameters:
+          endpoints:
+            - function:
+                functionQualifier: $DEFAULT
+                isIntegratedResponse: true
+              method: ANY
+              path: /proxy
+          environment: release
+          protocols:
+            - http
+            - https
+          serviceId: service-jc8mnuek
+  handler: index.main_handler
+  memorySize: 128
+  name: proxy
+  namespace: default
+  publicAccess: true
+  region: ap-guangzhou
+  role: SCF_QcsRole
+  runtime: Nodejs12.16
+  src: ./src
+  timeout: 30
+name: ap-guangzhou_default_proxy
+org: '1251739776'
+stage: dev
+# When using this configuration file for deployment, make sure the file name is "serverless.yml".
+# For more information: https://github.com/serverless-components/tencent-scf/blob/master/docs/configure.md
