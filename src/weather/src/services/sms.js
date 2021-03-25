@@ -9,7 +9,7 @@ module.exports = class SMS {
     const smsConfig = {
       credential: { secretId, secretKey, token },
       region,
-      profile: { httpProfile: { reqMethod: 'POST', reqTimeout: 5, endpoint: 'sms.tencentcloudapi.com' } }
+      profile: { httpProfile: { reqMethod: 'POST', reqTimeout: 10, endpoint: 'sms.tencentcloudapi.com' } }
     };
     let client = new SmsClient(smsConfig);
 
