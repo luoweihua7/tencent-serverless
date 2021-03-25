@@ -1,11 +1,10 @@
 const template = require('lodash/template');
 const IFTTTService = require('../services/ifttt');
 const { SERVICES: { ifttt: conf = {} } = {} } = require('../config');
-const { isPlainObject } = require('lodash');
 
 class IFTTT {
   constructor() {
-    if (isPlainObject(conf)) {
+    if (Object.keys(conf).length === 0) {
       console.log(`未配置IFTTT通知参数，跳过`);
       return;
     }

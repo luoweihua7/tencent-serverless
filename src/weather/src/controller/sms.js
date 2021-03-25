@@ -1,4 +1,4 @@
-const { template, isPlainObject } = require('lodash');
+const template = require('lodash/template');
 const SMSService = require('../services/sms');
 const {
   SERVICES: { sms: { notification: notificationConf = {}, alert: alertConf = {} } = {} } = {}
@@ -41,7 +41,7 @@ class SMS {
    * @param {object} param0 请求参数
    */
   async sendNotification({ city, weather, temperature, forecasts, summary }) {
-    if (isPlainObject(notificationConf)) {
+    if (Object.keys(notificationConf).length === 0) {
       console.log(`未配置短信通知参数，跳过`);
       return { code: 0, message: 'config not found' };
     }
@@ -59,7 +59,7 @@ class SMS {
   }
 
   async sendAlert({ id, city, level, source, alert, text, summary }) {
-    if (isPlainObject(notificationConf)) {
+    if (Object.keys(alertConf).length === 0) {
       console.log(`未配置短信预警参数，跳过`);
       return { code: 0, message: 'config not found' };
     }
