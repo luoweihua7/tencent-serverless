@@ -4,7 +4,12 @@
   "description": "AccuWeather API Gateway",
   "main": "index.js",
   "dependencies": {
-    "moment-timezone": "^0.5.33"
+    "axios": "^0.21.1",
+    "ioredis": "^4.27.1",
+    "lodash": "^4.17.21",
+    "moment-timezone": "^0.5.33",
+    "node-cron": "^3.0.0",
+    "tencentcloud-sdk-nodejs": "^4.0.108"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

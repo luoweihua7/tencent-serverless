@@ -1,42 +1,44 @@
-const AccuWeatherService = require('../services/accuweather');
-const redis = require('./redis');
-const { ACCUWEATHER } = require('../config');
+const template = require('lodash/template');
+
+const Weather = require('../services/weather');
+const Redis = require('../services/redis');
+const IFTTT = require('../services/ifttt');
+const SMS = require('../services/sms');
+
+const { date, string } = require('../utils');
+const { sms } = require('tencentcloud-sdk-nodejs');
 
 class AccuWeather {
-  constructor() {
-    this.weather = new AccuWeatherService(ACCUWEATHER);
+  constructor({ weather, redis, ifttt, sms, env = process.env }) {
+    this.redis = new Redis(redis);
+    this.weather = new Weather(weather);
+
+    this.options = { weather, redis, ifttt, sms, env };
   }
 
-  /**
-   * 天气预报
-   */
-  async forecast() {
+  async _forecasts() {
     let [currentConditions, _forecasts, locations] = await Promise.all([
       this.weather.currentConditions(),
       this.weather.forecasts(),
       this.weather.locations()
     ]);
 
-    // 信息处理
     let { city } = locations;
     let { weather, temperature } = currentConditions;
-    let days = Math.max(ACCUWEATHER.days || 0, 1) || 3; // 预报天数，默认3天
+    let days = 3; // 默认3天，可选3，5，7天
     let forecasts = [];
     let _nextdays = _forecasts
       .filter((day, index) => index < days)
-      .map((day) => {
-        let _day = day.date.split('-').pop();
+      .map((d) => {
+        let day = d.date.split('-').pop();
         forecasts.push({
-          day: _day,
-          weather: day.weather,
-          temperature: day.temperature
+          day,
+          weather: d.weather,
+          temperature: d.temperature
         });
-        return `${day.date.split('-').pop()}号${day.weather}, 气温${day.temperature}度`;
+        return `${d.date.split('-').pop()}号${d.weather}, 气温${d.temperature}度`;
       })
       .join('\n');
-
-    // 组装
-    let summary = `${city}${weather}, 温度${temperature}度\n${_nextdays}`;
 
     // 返回可选信息，按需使用
     return {
@@ -44,47 +46,133 @@ class AccuWeather {
       weather,
       temperature,
       forecasts,
-      summary
+      summary: `${city}${weather}, 温度${temperature}度\n${_nextdays}`
     };
   }
 
-  /**
-   * 天气预警
-   * @param {boolean} filter 是否过滤已发送的预警，默认为true
-   */
-  async alerts(filter = true) {
+  async forecasts() {
+    const {
+      ifttt: { notification: iftttCfg = {} },
+      sms: { notification: smsCfg = {} },
+      env
+    } = this.options;
+    // 获取天气数据
+    const { city, weather, temperature, forecasts, summary } = await this._forecasts();
+    console.log(`天气情况：${summary.replace(/\n/g, '；')}`);
+
+    // IFTTT 通知
+    if (iftttCfg.key && iftttCfg.webhook && date.matchCron(iftttCfg.cron)) {
+      const ifttt = new IFTTT(iftttCfg);
+      const content = template(iftttCfg.template)({ city, weather, temperature, forecasts, summary });
+      let iftttRet = await ifttt.send({ title: iftttCfg.title, content, icon: iftttCfg.icon });
+
+      console.log(`IFTTT通知发送结果: ${JSON.stringify(iftttRet)}`);
+    }
+
+    // SMS 通知
+    const { Sign, TemplateID, SmsSdkAppid, PhoneNumberSet, TemplateParamSet, cron: smsCron } = smsCfg;
+    if (Sign && TemplateID && SmsSdkAppid && PhoneNumberSet && TemplateParamSet && date.matchCron(smsCfg.cron)) {
+      const {
+        TENCENTCLOUD_SECRETID: secretId,
+        TENCENTCLOUD_SECRETKEY: secretKey,
+        TENCENTCLOUD_REGION: region,
+        TENCENTCLOUD_SESSIONTOKEN: token
+      } = env;
+      const sms = new SMS({ secretId, secretKey, token, region });
+      const params = {
+        Sign,
+        TemplateID,
+        SmsSdkAppid,
+        PhoneNumberSet,
+        TemplateParamSet: TemplateParamSet.map((item) => {
+          return template(item)({ city, weather, temperature, forecasts, summary });
+        })
+      };
+
+      const smsRet = await sms.send(params);
+      console.log(`天气通知发送结果: ${JSON.stringify(smsRet)}`);
+    }
+  }
+
+  async _alert() {
+    const { locationKey } = this.options.weather;
     let alerts = await this.weather.alerts();
 
-    // 根据条件，决定是否处理已经通知过的预警
-    if (filter) {
-      try {
-        let sentList = await redis.getAlerts();
-        let sentIdList = [];
-        let sentSummaryList = [];
+    try {
+      const sentAlerts = await this.redis.getAlerts(locationKey);
+      let sentIdList = [];
+      let sentSummaryList = [];
 
-        sentList.forEach(({ id, summary } = {}) => {
-          sentIdList.push(Number(id));
-          sentSummaryList.push(summary);
-        });
+      sentAlerts.forEach(({ id, summary } = {}) => {
+        sentIdList.push(Number(id));
+        sentSummaryList.push(summary);
+      });
 
-        alerts = alerts.filter(({ id, summary } = {}) => {
-          if (!sentIdList.includes(id) && !sentSummaryList.includes(summary)) {
-            // 未包含已经通知过的AlertID，以及预警信息文本也没有通知过
-            // 注：这里AccuWeather返回的预警信息中，会出现预警文本Summary相同，而AlertID会不同
-            console.log(`新预警：AlertID=${id}，Summary=${summary}`);
-            return true;
-          } else {
-            console.log(`过滤已通知预警：AlertID=${id}，Summary=${summary}`);
-            return false;
-          }
-        });
-      } catch (e) {
-        console.log(`获取已发送记录失败：${e.message}`);
-      }
+      alerts = alerts.filter(({ id, summary } = {}) => {
+        if (!sentIdList.includes(id) && !sentSummaryList.includes(summary)) {
+          // 未包含已经通知过的AlertID，以及预警信息文本也没有通知过
+          // 注：这里AccuWeather返回的预警信息中，会出现预警文本Summary相同，而AlertID会不同
+          console.log(`新预警：AlertID=${id}，Summary=${summary}`);
+          return true;
+        } else {
+          console.log(`过滤已通知预警：AlertID=${id}，Summary=${summary}`);
+          return false;
+        }
+      });
+
+      // 将新预警写入到存储
+      await this.redis.setAlerts(locationKey, alerts);
+    } catch (e) {
+      console.log(`获取或处理已发送记录失败：${e.message}`);
     }
+    await this.redis.quit();
 
     return alerts;
   }
+
+  async alert() {
+    const { ifttt = {}, sms = {}, env } = this.options;
+    const { alert: iftttCfg = {} } = ifttt;
+    const { alert: smsCfg = {} } = sms;
+    const alerts = await this._alert();
+
+    // IFTTT 通知
+    if (iftttCfg.key && iftttCfg.webhook && date.matchCron(iftttCfg.cron)) {
+      const ifttt = new IFTTT(iftttCfg);
+      const compiled = template(iftttCfg.template);
+
+      let promises = alerts.map(async ({ id, city, level, source, alert, text, summary } = {}) => {
+        const content = compiled({ id, city, level, source, alert, text, summary });
+        return await ifttt.send({ title: iftttCfg.title, content, icon: iftttCfg.icon });
+      });
+
+      await Promise.all(promises);
+    }
+
+    // SMS 通知
+    const { Sign, TemplateID, SmsSdkAppid, PhoneNumberSet, TemplateParamSet, cron: smsCron } = smsCfg;
+    if (Sign && TemplateID && SmsSdkAppid && PhoneNumberSet && TemplateParamSet && date.matchCron(smsCron)) {
+      const {
+        TENCENTCLOUD_SECRETID: secretId,
+        TENCENTCLOUD_SECRETKEY: secretKey,
+        TENCENTCLOUD_REGION: region,
+        TENCENTCLOUD_SESSIONTOKEN: token
+      } = env;
+      const sms = new SMS({ secretId, secretKey, token, region });
+      const defaults = { Sign, TemplateID, SmsSdkAppid, PhoneNumberSet };
+      const compiles = TemplateParamSet.map((item) => template(item));
+
+      let promises = alerts.map(async ({ id, city, level, source, alert, text, summary } = {}) => {
+        const params = {
+          ...defaults,
+          TemplateParamSet: compiles.map((tpl) => tpl({ id, city, level, source, alert, text, summary }))
+        };
+        return await sms.send(params);
+      });
+
+      await Promise.all(promises);
+    }
+  }
 }
 
-module.exports = new AccuWeather();
+module.exports = AccuWeather;

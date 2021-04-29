@@ -14,11 +14,11 @@ module.exports = class IFTTT {
     this.defaults = { value1, value2, value3 };
   }
 
-  async send({ value1, value2, value3 } = {}) {
+  async send({ title: value1, content: value2, icon: value3 }) {
     let opts = JSON.parse(JSON.stringify({ value1, value2, value3 })); // 去掉无效的undefined字段
     let params = { ...this.defaults, ...opts };
-
     let { data } = await axios.post(this.requestUrl, params);
+
     return data;
   }
 };

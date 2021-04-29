@@ -10,7 +10,7 @@ class RedisStore {
       maxRetriesPerRequest: 3,
       connectTimeout: 3000 // ioredis默认超时10s
     });
-    this._key = 'Alerts';
+    this._key = 'scf-weather';
   }
 
   /**
@@ -57,18 +57,19 @@ class RedisStore {
    */
   async tryConnect() {
     if (this.redis && this.redis.status !== 'ready') {
-      console.log(`Redis 连接未就绪 [${this.redis.status}]，尝试重连`);
+      // console.log(`Redis 连接未就绪 [${this.redis.status}]，尝试重连`);
 
       try {
         await this.redis.connect();
-      } catch (e) {}
-
-      console.log(`Redis 重连完成 [${this.redis.status}]`);
+        // console.log(`Redis 重连完成 [${this.redis.status}]`);
+      } catch (e) {
+        console.log(`Redis 连接未就绪，尝试重连失败：${e.message}`);
+      }
     }
   }
 
   async quit() {
-    console.log(`Redis 关闭连接`);
+    // console.log(`Redis 关闭连接`);
     return await this.redis.quit();
   }
 }

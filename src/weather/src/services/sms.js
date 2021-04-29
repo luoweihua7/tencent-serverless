@@ -39,7 +39,9 @@ module.exports = class SMS {
     try {
       // 发送短信
       const params = { SmsSdkAppid, TemplateID, Sign, PhoneNumberSet, TemplateParamSet };
-      let { SendStatusSet = [] } = await this.client.SendSms(params);
+      const smsRsp = await this.client.SendSms(params);
+
+      let { SendStatusSet = [] } = smsRsp || {};
 
       // 遍历所有结果，获取发送结果：全部成功，部分成功，全部失败
       let data = { sentSet: [], failureSet: [] };
@@ -49,7 +51,7 @@ module.exports = class SMS {
         if (Code === 'Ok') {
           sentSet.push({ PhoneNumber, Code, Message });
         } else {
-          console.log(`号码${PhoneNumber}发送失败，Message=${Message}`);
+          console.log(`号码${PhoneNumber}发送短信失败，Message=${Message}`);
           failureSet.push({ PhoneNumber, Code, Message });
         }
       });

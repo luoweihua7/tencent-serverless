@@ -1,4 +1,5 @@
 const moment = require('moment-timezone');
+const TimeMatcher = require('node-cron/src/time-matcher');
 
 module.exports = {
   /**
@@ -15,5 +16,16 @@ module.exports = {
    */
   formatDate(date = new Date(), fmt = 'YYYY-MM-DD HH:mm:ss', tz = 'Asia/Shanghai') {
     return moment(date.getTime()).tz(tz).format(fmt);
+  },
+
+  /**
+   * 当前时间是否命中cron
+   * @param {string} pattern 时间Cron，例如 "0 0 12 * * *" 表示每天的12点整
+   */
+  matchCron(pattern, tz = 'Asia/Shanghai') {
+    if (!pattern) return false;
+
+    const matcher = new TimeMatcher(pattern, tz);
+    return matcher.match(new Date());
   }
 };
